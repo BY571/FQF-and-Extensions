@@ -41,10 +41,10 @@ class NoisyLinear(nn.Linear):
     
     def forward(self, input):
         # sample random noise in sigma weight buffer and bias buffer
-        self.epsilon_weight.normal_()
+        self.epsilon_weight = torch.normal(self.epsilon_weight)
         bias = self.bias
         if bias is not None:
-            self.epsilon_bias.normal_()
+            self.epsilon_bias = torch.normal(self.epsilon_bias)
             bias = bias + self.sigma_bias * self.epsilon_bias
         return F.linear(input, self.weight + self.sigma_weight * self.epsilon_weight, bias)
 
