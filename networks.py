@@ -90,10 +90,10 @@ class QVN(nn.Module):
         if dueling:
             self.advantage = layer(layer_size, action_size)
             self.value = layer(layer_size, 1)
-            weight_init([self.head, self.ff_1])
+            if not noisy: weight_init([self.head, self.ff_1])
         else:
             self.ff_2 = layer(layer_size, action_size)    
-            weight_init([self.head, self.ff_1])
+            if not noisy: weight_init([self.head, self.ff_1])
 
     def calc_input_layer(self):
         x = torch.zeros(self.input_shape).unsqueeze(0)

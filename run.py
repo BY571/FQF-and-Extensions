@@ -10,7 +10,7 @@ from collections import deque, namedtuple
 import time
 import gym
 import argparse
-#import wrapper
+import wrapper
 
 
 
@@ -134,13 +134,11 @@ if __name__ == "__main__":
     torch.manual_seed(seed)
     if "-ram" in args.env or args.env == "CartPole-v0" or args.env == "LunarLander-v2": 
         env = gym.make(args.env)
-    else:
-        env = wrapper.make_env(args.env)
-    env.seed(seed)
-    if "-ram" in args.env or args.env == "CartPole-v0" or args.env == "LunarLander-v2": 
         eval_env = gym.make(args.env)
     else:
-        eval_env = wrapper.make_env(args.env)
+        env = wrapper.make_env(args.env)
+        eval_env = wrapper.make_env(args.env)    
+    env.seed(seed)
     eval_env.seed(seed+1)
     action_size     = env.action_space.n
     state_size = env.observation_space.shape
@@ -166,7 +164,7 @@ if __name__ == "__main__":
         eps_fixed = True
     else:
         eps_fixed = False
-    torch.autograd.set_detect_anomaly(True)
+
     t0 = time.time()
     run(frames = args.frames, eps_fixed=eps_fixed, eps_frames=args.eps_frames, min_eps=args.min_eps, eval_every=args.eval_every, eval_runs=args.eval_runs)
     t1 = time.time()
