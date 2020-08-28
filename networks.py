@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import math
 import torch.nn.functional as F
+from copy import copy
 
 
 
@@ -14,39 +15,85 @@ def weight_init_xavier(layers):
     for layer in layers:
         torch.nn.init.xavier_uniform_(layer.weight, gain=0.01)
 
+#class NoisyLinear(nn.Linear):
+#    # Noisy Linear Layer for independent Gaussian Noise
+#    def __init__(self, in_features, out_features, sigma_init=0.017, bias=True):
+#        super(NoisyLinear, self).__init__(in_features, out_features, bias=bias)
+#        # make the sigmas trainable:
+#        self.sigma_weight = nn.Parameter(torch.full((out_features, in_features), sigma_init))
+#        # not trainable tensor for the nn.Module
+#        self.register_buffer("epsilon_weight", torch.zeros(out_features, in_features))
+#        # extra parameter for the bias and register buffer for the bias parameter
+#        if bias: 
+#            self.sigma_bias = nn.Parameter(torch.full((out_features,), sigma_init))
+#            self.register_buffer("epsilon_bias", torch.zeros(out_features))
+#    
+#        # reset parameter as initialization of the layer
+#        self.reset_parameter()
+#    
+#    def reset_parameter(self):
+#        """
+#        initialize the parameter of the layer and bias
+#        """
+#        std = math.sqrt(3/self.in_features)
+#        self.weight.data.uniform_(-std, std)
+#        self.bias.data.uniform_(-std, std)
+#
+#    
+#    def forward(self, input):
+#        # sample random noise in sigma weight buffer and bias buffer
+#        self.epsilon_weight = torch.normal(self.epsilon_weight)
+#        bias = self.bias
+#        if bias is not None:
+#            self.epsilon_bias = torch.normal(self.epsilon_bias)
+#            bias = bias + self.sigma_bias * self.epsilon_bias
+#        return F.linear(input, self.weight + self.sigma_weight * self.epsilon_weight, bias)
+
 class NoisyLinear(nn.Linear):
-    # Noisy Linear Layer for independent Gaussian Noise
-    def __init__(self, in_features, out_features, sigma_init=0.017, bias=True):
+    # Noisy Linear Layer for factorised Gaussian noise 
+    def __init__(self, in_features, out_features, sigma_init=0.5, bias=True):
         super(NoisyLinear, self).__init__(in_features, out_features, bias=bias)
+        self.sigma_init = sigma_init
         # make the sigmas trainable:
-        self.sigma_weight = nn.Parameter(torch.full((out_features, in_features), sigma_init))
+        self.sigma_weight = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        self.mu_weight = nn.Parameter(torch.FloatTensor(out_features, in_features))
+
+        # extra parameter for the bias 
+        self.sigma_bias = nn.Parameter(torch.FloatTensor(out_features,))
+        self.mu_bias = nn.Parameter(torch.FloatTensor(out_features))
         # not trainable tensor for the nn.Module
-        self.register_buffer("epsilon_weight", torch.zeros(out_features, in_features))
-        # extra parameter for the bias and register buffer for the bias parameter
-        if bias: 
-            self.sigma_bias = nn.Parameter(torch.full((out_features,), sigma_init))
-            self.register_buffer("epsilon_bias", torch.zeros(out_features))
-    
+        self.register_buffer('eps_p', torch.FloatTensor(in_features))
+        self.register_buffer('eps_q', torch.FloatTensor(out_features))
         # reset parameter as initialization of the layer
         self.reset_parameter()
     
-    def reset_parameter(self):
+    def reset_parameter(self):  
         """
         initialize the parameter of the layer and bias
         """
-        std = math.sqrt(3/self.in_features)
-        self.weight.data.uniform_(-std, std)
-        self.bias.data.uniform_(-std, std)
-
+        bound = 1 / math.sqrt(self.in_features)
+        self.mu_weight.data.uniform_(-bound, bound)
+        self.mu_bias.data.uniform_(-bound, bound)
+        self.sigma_weight.data.fill_(self.sigma_init / math.sqrt(self.in_features))
+        self.sigma_bias.data.fill_(self.sigma_init / math.sqrt(self.out_features))
     
+    def f(self, x):
+        """
+        calc  output noise for weights and biases
+
+        bias could also be just x
+        """
+        return x.normal_().sign().mul(x.abs().sqrt())
+
     def forward(self, input):
         # sample random noise in sigma weight buffer and bias buffer
-        self.epsilon_weight = torch.normal(self.epsilon_weight)
-        bias = self.bias
-        if bias is not None:
-            self.epsilon_bias = torch.normal(self.epsilon_bias)
-            bias = bias + self.sigma_bias * self.epsilon_bias
-        return F.linear(input, self.weight + self.sigma_weight * self.epsilon_weight, bias)
+        self.eps_p.copy_(self.f(self.eps_p))
+        self.eps_q.copy_(self.f(self.eps_q))
+
+        weight = self.mu_weight + self.sigma_weight * self.eps_q.ger(self.eps_p)
+        bias = self.mu_bias + self.sigma_bias * self.eps_q.clone()
+
+        return F.linear(input, weight, bias) 
 
 
 class QVN(nn.Module):
@@ -78,7 +125,7 @@ class QVN(nn.Module):
                 nn.ReLU(),
                 nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1),
             )#.apply() #weight init
-            self.cos_embedding = nn.Linear(self.n_cos, self.calc_input_layer())
+            self.cos_embedding = layer(self.n_cos, self.calc_input_layer())
             self.ff_1 = layer(self.calc_input_layer(), layer_size)
             self.cos_layer_out = self.calc_input_layer()
 
@@ -123,7 +170,7 @@ class QVN(nn.Module):
         Return:
         quantiles [ shape of (batch_size, num_tau, action_size)]
         
-        """
+         """
         if embedding==None:
             x = self.forward(input)
         else:
