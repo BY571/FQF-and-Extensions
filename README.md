@@ -3,7 +3,7 @@
 PyTorch implementation of the state-of-the-art distributional reinforcement learning algorithm Fully Parameterized Quantile Function (FQF).
 Implementation includes also [DQN extensions](https://arxiv.org/abs/1710.02298) with which FQF represents the most powerful Rainbow version. 
 
-For details of the algorithm check the [article on medium](https://medium.com/@sebastian.dittert3692/distributional-reinforcement-learning-part-2-iqn-and-fqf-567fbc7a04d7)
+For details on the algorithm check the [article on medium](https://medium.com/@sebastian.dittert3692/distributional-reinforcement-learning-part-2-iqn-and-fqf-567fbc7a04d7)
 
 Extension included:
 - **P**rioritized **E**xperience **R**eplay Buffer (PER)
