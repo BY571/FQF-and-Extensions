@@ -66,13 +66,15 @@ To see the options:
 ## Help and issues:
 Im open for feedback, found bugs, improvements or anything. Just leave me a message or contact me.
 
-### Paper references:
+## Paper and References:
 
 - [FQF](https://arxiv.org/pdf/1911.02140.pdf)
 - [Dueling DQN](https://arxiv.org/abs/1511.06581)
 - [Noisy layer](https://arxiv.org/pdf/1706.10295.pdf)
 - [C51](https://arxiv.org/pdf/1707.06887.pdf)
 - [PER](https://arxiv.org/pdf/1511.05952.pdf)
+
+Big thank you also to Toshiki Watanabe and his [Repo](https://github.com/ku2482/fqf-iqn-qrdqn.pytorch) who helped me with the implementation and where my core FQF is based on!
 
 
 ## Author
@@ -90,5 +92,3 @@ For citation:
   howpublished = {\url{https://github.com/BY571/FQF-and-Extensions}},
 }
 
-  
-  
