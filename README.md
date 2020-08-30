@@ -62,6 +62,9 @@ To see the options:
   
 ## Results
 
+#### CartPole Results
+![alttext](/imgs/FQF_CP_Extensions_.png)
+
 
 ## Help and issues:
 Im open for feedback, found bugs, improvements or anything. Just leave me a message or contact me.
@@ -74,7 +77,7 @@ Im open for feedback, found bugs, improvements or anything. Just leave me a mess
 - [C51](https://arxiv.org/pdf/1707.06887.pdf)
 - [PER](https://arxiv.org/pdf/1511.05952.pdf)
 
-Big thank you also to Toshiki Watanabe and his [Repo](https://github.com/ku2482/fqf-iqn-qrdqn.pytorch) who helped me with the implementation and where my core FQF is based on!
+Big thank you also to Toshiki Watanabe who helped me with the implementation and where I have the training routine for the fraction proposal network from! His [Repo](https://github.com/ku2482/fqf-iqn-qrdqn.pytorch)
 
 
 ## Author
