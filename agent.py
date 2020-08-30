@@ -180,7 +180,7 @@ class FQF_Agent():
         # Minimize the huber loss
         self.optimizer.zero_grad()
         loss.backward()
-        #clip_grad_norm_(self.qnetwork_local.parameters(),1)
+        clip_grad_norm_(self.qnetwork_local.parameters(),1)
         self.optimizer.step()
 
         # ------------------- update target network ------------------- #
@@ -219,7 +219,7 @@ class FQF_Agent():
             F_Z_tau = self.qnetwork_local.get_quantiles(states, taus[:, 1:-1], embedding.detach())
             FZ_tau = F_Z_tau.gather(2, actions.unsqueeze(-1).expand(self.BATCH_SIZE, self.N-1, 1))
             
-        frac_loss = calc_fraction_loss(Q_expected.detach(), FZ_tau, taus)
+        frac_loss = calc_fraction_loss(Q_expected.detach(), FZ_tau, taus, weights)
         entropy_loss = self.entropy_coeff * entropy.mean() 
         frac_loss += entropy_loss
 
