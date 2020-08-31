@@ -23,6 +23,7 @@ class FQF_Agent():
                  LR,
                  TAU,
                  GAMMA,
+                 Munchausen,
                  N,
                  entropy_coeff,
                  device,
@@ -51,12 +52,18 @@ class FQF_Agent():
         self.device = device
         self.TAU = TAU
         self.GAMMA = GAMMA
+
         self.BATCH_SIZE = BATCH_SIZE
         self.Q_updates = 0
         self.n_step = n_step
         self.entropy_coeff = entropy_coeff
         self.N = N
-        self.last_action = None
+        # munchausen params
+        self.munchausen = Munchausen
+        self.entropy_tau = 0.03 #0.03
+        self.entropy_tau_coeff = 1e-2
+        self.lo = -1
+        self.alpha = 0.9
     
         if "noisy" in self.network:
             noisy = True
@@ -95,11 +102,12 @@ class FQF_Agent():
         if len(self.memory) > self.BATCH_SIZE:
             experiences = self.memory.sample()
             if not self.per:
-                loss = self.learn(experiences)
+                loss, entropy = self.learn(experiences)
             else:
-                loss = self.learn_per(experiences)
+                loss, entropy = self.learn_per(experiences)
             self.Q_updates += 1
             writer.add_scalar("Q_loss", loss, self.Q_updates)
+            writer.add_scalar("Entropy", entropy, self.Q_updates)
 
                 
     def act(self, state, eps=0.):
@@ -132,7 +140,7 @@ class FQF_Agent():
         states, actions, rewards, next_states, dones = experiences
         embedding = self.qnetwork_local.forward(states)
         taus, taus_, entropy = self.FPN(embedding.detach())
-        
+
         # Get expected Q values from local model
         F_Z_expected = self.qnetwork_local.get_quantiles(states, taus_, embedding)
         Q_expected = F_Z_expected.gather(2, actions.unsqueeze(-1).expand(self.BATCH_SIZE, self.N, 1))
@@ -146,21 +154,53 @@ class FQF_Agent():
         frac_loss = calc_fraction_loss(Q_expected.detach(), FZ_tau, taus)
         entropy_loss = self.entropy_coeff * entropy.mean() 
         frac_loss += entropy_loss
+        # Calculate Q_targets without munchausen 
+        if not self.munchausen:
+            # Get max predicted Q values (for next states) from target model
+            with torch.no_grad():
+                
+                next_state_embedding_loc = self.qnetwork_local.forward(next_states)  
+                n_taus, n_taus_, _ = self.FPN(next_state_embedding_loc)
+                F_Z_next = self.qnetwork_local.get_quantiles(next_states, n_taus_, next_state_embedding_loc)  
+                Q_targets_next = ((n_taus[:, 1:].unsqueeze(-1) - n_taus[:, :-1].unsqueeze(-1))*F_Z_next).sum(1)
+                action_indx = torch.argmax(Q_targets_next, dim=1, keepdim=True)
+                
+                next_state_embedding = self.qnetwork_target.forward(next_states)
+                F_Z_next = self.qnetwork_target.get_quantiles(next_states, taus_, next_state_embedding)
+                Q_targets_next = F_Z_next.gather(2, action_indx.unsqueeze(-1).expand(self.BATCH_SIZE, self.N, 1)).transpose(1,2)
+                Q_targets = rewards.unsqueeze(-1) + (self.GAMMA**self.n_step * Q_targets_next.to(self.device) * (1. - dones.unsqueeze(-1)))
+        # Calculate Q_targets with munchausen
+        else:
+            ns_embedding = self.qnetwork_target.forward(next_states).detach()
+            ns_taus, ns_taus_, ns_entropy = self.FPN(ns_embedding.detach())
+            ns_taus = ns_taus.detach()
 
-        # Get max predicted Q values (for next states) from target model
-        with torch.no_grad():
+            ns_entropy = ns_entropy.detach()
+            m_quantiles = self.qnetwork_target.get_quantiles(next_states, ns_taus_, ns_embedding).detach()
+            m_Q = ((ns_taus[:, 1:].unsqueeze(-1) - ns_taus[:, :-1].unsqueeze(-1)) * m_quantiles).sum(1)
+            # calculate log-pi 
+            logsum = torch.logsumexp(\
+                (m_Q - m_Q.max(1)[0].unsqueeze(-1))/(ns_entropy*self.entropy_tau_coeff).mean().detach(), 1).unsqueeze(-1) #logsum trick
+            assert logsum.shape == (self.BATCH_SIZE, 1), "log pi next has wrong shape: {}".format(logsum.shape)
+            tau_log_pi_next = (m_Q - m_Q.max(1)[0].unsqueeze(-1) - (ns_entropy*self.entropy_tau_coeff).mean().detach()*logsum).unsqueeze(1)
             
-            next_state_embedding_loc = self.qnetwork_local.forward(next_states)  
-            n_taus, n_taus_, _ = self.FPN(next_state_embedding_loc)
-            F_Z_next = self.qnetwork_local.get_quantiles(next_states, n_taus_, next_state_embedding_loc)  
-            Q_targets_next = ((n_taus[:, 1:].unsqueeze(-1) - n_taus[:, :-1].unsqueeze(-1))*F_Z_next).sum(1)
-            action_indx = torch.argmax(Q_targets_next, dim=1, keepdim=True)
-            
-            next_state_embedding = self.qnetwork_target.forward(next_states)
-            F_Z_next = self.qnetwork_target.get_quantiles(next_states, taus_, next_state_embedding)
-            Q_targets_next = F_Z_next.gather(2, action_indx.unsqueeze(-1).expand(self.BATCH_SIZE, self.N, 1)).transpose(1,2)
-            Q_targets = rewards.unsqueeze(-1) + (self.GAMMA**self.n_step * Q_targets_next.to(self.device) * (1. - dones.unsqueeze(-1)))
+            pi_target = F.softmax(m_Q/(ns_entropy*self.entropy_tau_coeff).mean().detach(), dim=1).unsqueeze(1) 
+            Q_target = (self.GAMMA**self.n_step * (pi_target * (m_quantiles-tau_log_pi_next)*(1 - dones.unsqueeze(-1))).sum(2)).unsqueeze(1)
+            assert Q_target.shape == (self.BATCH_SIZE, 1, self.N)
 
+            m_quantiles_targets = self.qnetwork_local.get_quantiles(states, taus_, embedding).detach()
+            m_Q_targets = ((taus[:, 1:].unsqueeze(-1).detach() - taus[:, :-1].unsqueeze(-1).detach()) * m_quantiles_targets).sum(1)
+            v_k_target = m_Q_targets.max(1)[0].unsqueeze(-1) 
+            tau_log_pik = m_Q_targets - v_k_target - (entropy*self.entropy_tau_coeff).mean().detach()*torch.logsumexp(\
+                                                                    (m_Q_targets - v_k_target)/(entropy*self.entropy_tau_coeff).mean().detach(), 1).unsqueeze(-1)
+            assert tau_log_pik.shape == (self.BATCH_SIZE, self.action_size), "shape instead is {}".format(tau_log_pik.shape)
+            munchausen_addon = tau_log_pik.gather(1, actions)
+            
+            # calc munchausen reward:
+            munchausen_reward = (rewards + self.alpha*torch.clamp(munchausen_addon, min=self.lo, max=0)).unsqueeze(-1)
+            assert munchausen_reward.shape == (self.BATCH_SIZE, 1, 1)
+            # Compute Q targets for current states 
+            Q_targets = munchausen_reward + Q_target
 
         # Quantile Huber loss
         td_error = Q_targets - Q_expected
@@ -185,7 +225,7 @@ class FQF_Agent():
 
         # ------------------- update target network ------------------- #
         self.soft_update(self.qnetwork_local, self.qnetwork_target)
-        return loss.detach().cpu().numpy()            
+        return loss.detach().cpu().numpy(), entropy.mean().detach().cpu().numpy()          
 
 
 
@@ -213,8 +253,7 @@ class FQF_Agent():
         F_Z_expected = self.qnetwork_local.get_quantiles(states, taus_, embedding)
         Q_expected = F_Z_expected.gather(2, actions.unsqueeze(-1).expand(self.BATCH_SIZE, self.N, 1))
         assert Q_expected.shape == (self.BATCH_SIZE, self.N, 1)
-        
-        # calc fractional loss 
+        # calc fractional loss
         with torch.no_grad():
             F_Z_tau = self.qnetwork_local.get_quantiles(states, taus[:, 1:-1], embedding.detach())
             FZ_tau = F_Z_tau.gather(2, actions.unsqueeze(-1).expand(self.BATCH_SIZE, self.N-1, 1))
@@ -223,19 +262,51 @@ class FQF_Agent():
         entropy_loss = self.entropy_coeff * entropy.mean() 
         frac_loss += entropy_loss
 
-        # Get max predicted Q values (for next states) from target model
-        with torch.no_grad():
+        if not self.munchausen:
+            # Get max predicted Q values (for next states) from target model
+            with torch.no_grad():
+                
+                next_state_embedding_loc = self.qnetwork_local.forward(next_states)  
+                n_taus, n_taus_, _ = self.FPN(next_state_embedding_loc)
+                F_Z_next = self.qnetwork_local.get_quantiles(next_states, n_taus_, next_state_embedding_loc)  
+                Q_targets_next = ((n_taus[:, 1:].unsqueeze(-1) - n_taus[:, :-1].unsqueeze(-1))*F_Z_next).sum(1)
+                action_indx = torch.argmax(Q_targets_next, dim=1, keepdim=True)
+                
+                next_state_embedding = self.qnetwork_target.forward(next_states)
+                F_Z_next = self.qnetwork_target.get_quantiles(next_states, taus_, next_state_embedding)
+                Q_targets_next = F_Z_next.gather(2, action_indx.unsqueeze(-1).expand(self.BATCH_SIZE, self.N, 1)).transpose(1,2)
+                Q_targets = rewards.unsqueeze(-1) + (self.GAMMA**self.n_step * Q_targets_next.to(self.device) * (1. - dones.unsqueeze(-1)))
+        else:
+            ns_embedding = self.qnetwork_target.forward(next_states).detach()
+            ns_taus, ns_taus_, ns_entropy = self.FPN(ns_embedding.detach())
+            ns_taus = ns_taus.detach()
+
+            ns_entropy = ns_entropy.detach()
+            m_quantiles = self.qnetwork_target.get_quantiles(next_states, ns_taus_, ns_embedding).detach()
+            m_Q = ((ns_taus[:, 1:].unsqueeze(-1) - ns_taus[:, :-1].unsqueeze(-1)) * m_quantiles).sum(1)
+            # calculate log-pi 
+            logsum = torch.logsumexp(\
+                (m_Q - m_Q.max(1)[0].unsqueeze(-1))/(ns_entropy*self.entropy_tau_coeff).mean().detach(), 1).unsqueeze(-1) #logsum trick
+            assert logsum.shape == (self.BATCH_SIZE, 1), "log pi next has wrong shape: {}".format(logsum.shape)
+            tau_log_pi_next = (m_Q - m_Q.max(1)[0].unsqueeze(-1) - (ns_entropy*self.entropy_tau_coeff).mean().detach()*logsum).unsqueeze(1)
             
-            next_state_embedding_loc = self.qnetwork_local.forward(next_states)  
-            n_taus, n_taus_, _ = self.FPN(next_state_embedding_loc)
-            F_Z_next = self.qnetwork_local.get_quantiles(next_states, n_taus_, next_state_embedding_loc)  
-            Q_targets_next = ((n_taus[:, 1:].unsqueeze(-1) - n_taus[:, :-1].unsqueeze(-1))*F_Z_next).sum(1)
-            action_indx = torch.argmax(Q_targets_next, dim=1, keepdim=True)
+            pi_target = F.softmax(m_Q/(ns_entropy*self.entropy_tau_coeff).mean().detach(), dim=1).unsqueeze(1) 
+            Q_target = (self.GAMMA**self.n_step * (pi_target * (m_quantiles-tau_log_pi_next)*(1 - dones.unsqueeze(-1))).sum(2)).unsqueeze(1)
+            assert Q_target.shape == (self.BATCH_SIZE, 1, self.N)
+
+            m_quantiles_targets = self.qnetwork_local.get_quantiles(states, taus_, embedding).detach()
+            m_Q_targets = ((taus[:, 1:].unsqueeze(-1).detach() - taus[:, :-1].unsqueeze(-1).detach()) * m_quantiles_targets).sum(1)
+            v_k_target = m_Q_targets.max(1)[0].unsqueeze(-1) 
+            tau_log_pik = m_Q_targets - v_k_target - (entropy*self.entropy_tau_coeff).mean().detach()*torch.logsumexp(\
+                                                                    (m_Q_targets - v_k_target)/(entropy*self.entropy_tau_coeff).mean().detach(), 1).unsqueeze(-1)
+            assert tau_log_pik.shape == (self.BATCH_SIZE, self.action_size), "shape instead is {}".format(tau_log_pik.shape)
+            munchausen_addon = tau_log_pik.gather(1, actions)
             
-            next_state_embedding = self.qnetwork_target.forward(next_states)
-            F_Z_next = self.qnetwork_target.get_quantiles(next_states, taus_, next_state_embedding)
-            Q_targets_next = F_Z_next.gather(2, action_indx.unsqueeze(-1).expand(self.BATCH_SIZE, self.N, 1)).transpose(1,2)
-            Q_targets = rewards.unsqueeze(-1) + (self.GAMMA**self.n_step * Q_targets_next.to(self.device) * (1. - dones.unsqueeze(-1)))
+            # calc munchausen reward:
+            munchausen_reward = (rewards + self.alpha*torch.clamp(munchausen_addon, min=self.lo, max=0)).unsqueeze(-1)
+            assert munchausen_reward.shape == (self.BATCH_SIZE, 1, 1)
+            # Compute Q targets for current states 
+            Q_targets = munchausen_reward + Q_target
 
 
         # Quantile Huber loss
@@ -264,7 +335,7 @@ class FQF_Agent():
         # update priorities
         td_error = td_error.sum(dim=1).mean(dim=1,keepdim=True) # not sure about this -> test 
         self.memory.update_priorities(idx, abs(td_error.data.cpu().numpy()))
-        return loss.detach().cpu().numpy()       
+        return loss.detach().cpu().numpy(), entropy.mean().detach().cpu().numpy()    
 
     def soft_update(self, local_model, target_model):
         """Soft update model parameters.

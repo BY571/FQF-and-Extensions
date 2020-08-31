@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     writer = SummaryWriter("runs/"+args.info)     
-    
+    torch.autograd.set_detect_anomaly(True)
     env_name = args.env
     seed = args.seed
     BUFFER_SIZE = args.memory_size
@@ -152,7 +152,8 @@ if __name__ == "__main__":
                         BUFFER_SIZE=BUFFER_SIZE, 
                         LR=LR, 
                         TAU=TAU, 
-                        GAMMA=GAMMA, 
+                        GAMMA=GAMMA,
+                        Munchausen=args.munchausen,
                         N=args.N,
                         entropy_coeff=args.entropy_coeff,
                         device=device, 
