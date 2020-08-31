@@ -10,7 +10,7 @@ Extension included:
 - Noisy Layer for exploration
 - N-step Bootstrapping
 - Dueling Version
-- Munchausen RL [ToDo](https://medium.com/analytics-vidhya/munchausen-reinforcement-learning-9876efc829de)
+- [Munchausen RL](https://medium.com/analytics-vidhya/munchausen-reinforcement-learning-9876efc829de)
 
 #### Dependencies
 Trained and tested on:
@@ -48,6 +48,7 @@ To see the options:
     -n_step, Multistep IQN, default = 1
     -m, --memory_size, Replay memory size, default = 1e5
     -u, --update_every, Update the network every x steps, default = 1
+    -munchausen,  choices=[0,1], Use Munchausen RL loss for training if set to 1 (True), default = 0
     -lr, Learning rate, default = 5e-4
     -g, --gamma, Discount factor gamma, default = 0.99
     -t, --tau, Soft update parameter tat, default = 1e-2
