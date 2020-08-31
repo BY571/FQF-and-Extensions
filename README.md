@@ -65,6 +65,9 @@ To see the options:
 #### CartPole Results
 ![alttext](/imgs/FQF_CP_Extensions_.png)
 
+#### LunarLander Results
+200000 Frames (~54 min), eps_frames: 20000, eval_every: 5000
+![alttext](/imgs/FQF_LL_Extensions_.png)
 
 ## Help and issues:
 Im open for feedback, found bugs, improvements or anything. Just leave me a message or contact me.
