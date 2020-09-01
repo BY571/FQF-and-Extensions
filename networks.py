@@ -134,13 +134,14 @@ class QVN(nn.Module):
             self.cos_embedding = nn.Linear(self.n_cos, layer_size)
             self.ff_1 = layer(layer_size, layer_size)
             self.cos_layer_out = layer_size
+            if not noisy: weight_init([self.head, self.ff_1])
         if dueling:
             self.advantage = layer(layer_size, action_size)
             self.value = layer(layer_size, 1)
-            if not noisy: weight_init([self.head, self.ff_1])
+            if not noisy: weight_init([self.ff_1])
         else:
             self.ff_2 = layer(layer_size, action_size)    
-            if not noisy: weight_init([self.head, self.ff_1])
+            if not noisy: weight_init([self.ff_1])
 
     def calc_input_layer(self):
         x = torch.zeros(self.input_shape).unsqueeze(0)
@@ -160,8 +161,11 @@ class QVN(nn.Module):
     
     def forward(self, input):
         """Calculate the state embeddings"""
-        return torch.relu(self.head(input))
-
+        if self.state_dim == 3:
+            x =  torch.relu(self.head(input))
+            return x.view(input.size(0), -1)
+        else:
+            return torch.relu(self.head(input))
         
     def get_quantiles(self, input, taus, embedding=None):
         """
@@ -173,16 +177,17 @@ class QVN(nn.Module):
          """
         if embedding==None:
             x = self.forward(input)
+            if self.state_dim == 3: x = x.view(input.size(0), -1)
         else:
             x = embedding
         batch_size = x.shape[0]
         num_tau = taus.shape[1]
         cos = self.calc_cos(taus) # cos shape (batch, num_tau, layer_size)
         cos = cos.view(batch_size*num_tau, self.n_cos)
-        cos_x = torch.relu(self.cos_embedding(cos)).view(batch_size, num_tau, self.layer_size) # (batch, n_tau, layer)
+        cos_x = torch.relu(self.cos_embedding(cos)).view(batch_size, num_tau, self.cos_layer_out) # (batch, n_tau, layer)
         
         # x has shape (batch, layer_size) for multiplication –> reshape to (batch, 1, layer)
-        x = (x.unsqueeze(1)*cos_x).view(batch_size*num_tau, self.layer_size)   
+        x = (x.unsqueeze(1)*cos_x).view(batch_size*num_tau, self.cos_layer_out)   
         x = torch.relu(self.ff_1(x))
         if self.dueling:
             advantage = self.advantage(x)
@@ -213,6 +218,7 @@ class FPN(nn.Module):
         taus_ [shape of (batch_size, num_tau)]
         entropy [shape of (batch_size, 1)]
         """
+
         q = self.softmax(self.ff(x)) 
         q_probs = q.exp()
         taus = torch.cumsum(q_probs, dim=1)

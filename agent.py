@@ -80,8 +80,13 @@ class FQF_Agent():
         self.qnetwork_target = QVN(state_size, action_size,layer_size, n_step,device, seed, dueling=duel, noisy=noisy, N=N).to(device)
         self.optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=LR)
         print(self.qnetwork_local)
- 
-        self.FPN = FPN(layer_size, seed, N, device).to(device)
+
+        state_dim = len(self.state_size)
+        if state_dim == 3:
+            fpn_layer_size = 3136
+        else:
+            fpn_layer_size = layer_size
+        self.FPN = FPN(fpn_layer_size, seed, N, device).to(device)
         print(self.FPN)
         self.frac_optimizer = optim.RMSprop(self.FPN.parameters(), lr=LR*0.000001, alpha=0.95, eps=0.00001)
         
