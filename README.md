@@ -1,7 +1,7 @@
 # Fully Parameterized Quantile Function (FQF) and Extensions
 
 PyTorch implementation of the state-of-the-art distributional reinforcement learning algorithm Fully Parameterized Quantile Function (FQF).
-Implementation includes also [DQN extensions](https://arxiv.org/abs/1710.02298) with which FQF represents the most powerful Rainbow version. 
+Implementation includes also [DQN extensions](https://arxiv.org/abs/1710.02298) with which FQF represents the most powerful Rainbow version and supports multi env for parallelization to reduce wall clock time and. 
 
 For details on the algorithm check the [article on medium](https://medium.com/@sebastian.dittert3692/distributional-reinforcement-learning-part-2-iqn-and-fqf-567fbc7a04d7)
 
@@ -11,11 +11,12 @@ Extension included:
 - N-step Bootstrapping
 - Dueling Version
 - [Munchausen RL](https://medium.com/analytics-vidhya/munchausen-reinforcement-learning-9876efc829de)
+- Parallelization with multi environments. 4 parallel environments reduced the wall clock time for the CartPole environment to less than 1/3.
 
 #### Dependencies
 Trained and tested on:
 <pre>
-Python 3.5.6 
+Python 3.6
 PyTorch 1.4.0  
 Numpy 1.15.2 
 gym 0.10.11 
@@ -54,6 +55,7 @@ To see the options:
     -t, --tau, Soft update parameter tat, default = 1e-2
     -eps_frames, Linear annealed frames for Epsilon, default = 5000
     -min_eps, Final epsilon greedy value, default = 0.025
+    -w , --worker, Number of parallel environments. performance for more than 4 worker can be unstable since batchsize increased proportionally, default = 0
     -info, Name of the training run
     -save_model, choices=[0,1]  Specify if the trained network shall be saved or not, default is 0 - not saved!
 

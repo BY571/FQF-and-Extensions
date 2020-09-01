@@ -26,6 +26,7 @@ class FQF_Agent():
                  Munchausen,
                  N,
                  entropy_coeff,
+                 worker,
                  device,
                  seed):
         """Initialize an Agent object.
@@ -52,8 +53,10 @@ class FQF_Agent():
         self.device = device
         self.TAU = TAU
         self.GAMMA = GAMMA
-
-        self.BATCH_SIZE = BATCH_SIZE
+        self.worker = worker
+        self.UPDATE_EVERY = worker
+        self.t_step = 0
+        self.BATCH_SIZE = BATCH_SIZE*worker
         self.Q_updates = 0
         self.n_step = n_step
         self.entropy_coeff = entropy_coeff
@@ -93,45 +96,51 @@ class FQF_Agent():
         # Replay memory
         if "per" in self.network:
             self.per = 1
-            self.memory = PrioritizedReplay(BUFFER_SIZE, BATCH_SIZE, seed=seed, gamma=self.GAMMA, n_step=n_step)
+            self.memory = PrioritizedReplay(BUFFER_SIZE, self.BATCH_SIZE, seed=seed, gamma=self.GAMMA, n_step=n_step, parallel_env=self.worker)
         else:
             self.per = 0
-            self.memory = ReplayBuffer(BUFFER_SIZE, BATCH_SIZE, self.device, seed, self.GAMMA, n_step)
+            self.memory = ReplayBuffer(BUFFER_SIZE, self.BATCH_SIZE, self.device, seed, self.GAMMA, n_step, self.worker)
         print("Using PER: {}".format(self.per))
 
     def step(self, state, action, reward, next_state, done, writer):
         # Save experience in replay memory
         self.memory.add(state, action, reward, next_state, done)
-
-        # If enough samples are available in memory, get random subset and learn
-        if len(self.memory) > self.BATCH_SIZE:
-            experiences = self.memory.sample()
-            if not self.per:
-                loss, entropy = self.learn(experiences)
-            else:
-                loss, entropy = self.learn_per(experiences)
-            self.Q_updates += 1
-            writer.add_scalar("Q_loss", loss, self.Q_updates)
-            writer.add_scalar("Entropy", entropy, self.Q_updates)
+        # Learn every UPDATE_EVERY time steps.
+        self.t_step = (self.t_step + 1) % self.UPDATE_EVERY
+        if self.t_step == 0:
+            # If enough samples are available in memory, get random subset and learn
+            if len(self.memory) > self.BATCH_SIZE:
+                experiences = self.memory.sample()
+                if not self.per:
+                    loss, entropy = self.learn(experiences)
+                else:
+                    loss, entropy = self.learn_per(experiences)
+                self.Q_updates += 1
+                writer.add_scalar("Q_loss", loss, self.Q_updates)
+                writer.add_scalar("Entropy", entropy, self.Q_updates)
 
                 
-    def act(self, state, eps=0.):
+    def act(self, state, eps=0., eval=False):
         """Returns actions for given state as per current policy"""
         # Epsilon-greedy action selection
         if random.random() > eps: # select greedy actioLinearn if random number is higher than epsilon or noisy network is used!
-            state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+            state = torch.from_numpy(state).float().to(self.device)
             self.qnetwork_local.eval()
             with torch.no_grad():
                 embedding = self.qnetwork_local.forward(state)
                 taus, taus_, _ = self.FPN(embedding)
                 F_Z = self.qnetwork_local.get_quantiles(state, taus_, embedding)
                 action_values = ((taus[:, 1:].unsqueeze(-1) - taus[:, :-1].unsqueeze(-1)) * F_Z).sum(1)
-                assert action_values.shape == (1, self.action_size)
+                #assert action_values.shape == (1, self.action_size)
                 
             self.qnetwork_local.train()
-            return np.argmax(action_values.cpu().data.numpy())
+            return np.argmax(action_values.cpu().data.numpy(), axis=1)
         else:
-            return random.choice(np.arange(self.action_size))
+            if eval:
+                action = random.choices(np.arange(self.action_size), k=1)
+            else:
+                action = random.choices(np.arange(self.action_size), k=self.worker)
+            return action
 
 
     def learn(self, experiences):
