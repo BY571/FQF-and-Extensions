@@ -52,7 +52,7 @@ To see the options:
     -munchausen,  choices=[0,1], Use Munchausen RL loss for training if set to 1 (True), default = 0
     -lr, Learning rate, default = 5e-4
     -g, --gamma, Discount factor gamma, default = 0.99
-    -t, --tau, Soft update parameter tat, default = 1e-2
+    -t, --tau, Soft update parameter tat, default = 1e-3
     -eps_frames, Linear annealed frames for Epsilon, default = 5000
     -min_eps, Final epsilon greedy value, default = 0.025
     -w , --worker, Number of parallel environments. performance for more than 4 worker can be unstable since batchsize increased proportionally, default = 0
