@@ -85,7 +85,7 @@ network. Also IQN uses N=8 and FQF N=32 quantiles!
 - gamma 0.99
 - layer_size 512
 
-![alttext](FQF_IQN_pong_.png)
+![alttext](/imgs/FQF_IQN_pong_.png)
 
 
 ## Help and issues:
