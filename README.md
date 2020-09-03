@@ -44,11 +44,10 @@ To see the options:
     -seed, Random seed to replicate training runs, default = 1
     -N, Number of quantiles, default = 32
     -ec, --entropy_coeff, Entropy coefficient, default = 0.001
-    -bs, --batch_size, Batch size for updating the DQN, default = 8
+    -bs, --batch_size, Batch size for updating the DQN, default = 32
     -layer_size, Size of the hidden layer, default=512
     -n_step, Multistep IQN, default = 1
     -m, --memory_size, Replay memory size, default = 1e5
-    -u, --update_every, Update the network every x steps, default = 1
     -munchausen,  choices=[0,1], Use Munchausen RL loss for training if set to 1 (True), default = 0
     -lr, Learning rate, default = 5e-4
     -g, --gamma, Discount factor gamma, default = 0.99
@@ -71,6 +70,23 @@ To see the options:
 #### LunarLander Results
 200000 Frames (~54 min), eps_frames: 20000, eval_every: 5000
 ![alttext](/imgs/FQF_IQN_LL_.png)
+
+#### Pong Results
+800000 Frames (IQN: ~95 min 3 worker, FQF: ~240 min 2 worker) Authors of the paper say: FQF is roughly 20% slower than IQN due to the additional fraction proposal
+network. Also IQN uses N=8 and FQF N=32 quantiles!
+
+**hyperparameter**:
+- frames 800000
+- eps_frames 80000
+- min_eps 0.025
+- lr 2e-4
+- tau 1e-3
+- m 20000
+- gamma 0.99
+- layer_size 512
+
+![alttext](FQF_IQN_pong_.png)
+
 
 ## Help and issues:
 Im open for feedback, found bugs, improvements or anything. Just leave me a message or contact me.
