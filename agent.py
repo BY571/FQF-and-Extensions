@@ -54,7 +54,7 @@ class FQF_Agent():
         self.TAU = TAU
         self.GAMMA = GAMMA
         self.worker = worker
-        self.UPDATE_EVERY = worker
+        self.UPDATE_EVERY = 1
         self.t_step = 0
         self.BATCH_SIZE = BATCH_SIZE*worker
         self.Q_updates = 0
