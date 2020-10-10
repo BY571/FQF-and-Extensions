@@ -373,7 +373,7 @@ def calc_fraction_loss(FZ_,FZ, taus, weights=None):
     flag_2 = FZ < torch.cat([FZ[:, 1:], FZ_[:, -1:]], dim=1)
     gradients = (torch.where(flag_1, gradients1, - gradients1) + torch.where(flag_2, gradients2, -gradients2)).view(taus.shape[0], 31)
     assert not gradients.requires_grad
-    if not weights == None:
+    if weights != None:
         loss = ((gradients * taus[:, 1:-1]).sum(dim=1)*weights).mean()
     else:
         loss = (gradients * taus[:, 1:-1]).sum(dim=1).mean()
